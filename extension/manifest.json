@@ -1,0 +1,19 @@
+{
+    "manifest_version": 3,
+    "name": "LangChain RAG Chatbot",
+    "version": "1.0",
+    "description": "A RAG chatbot for the current webpage using LangChain",
+    "permissions": ["activeTab", "scripting"],
+    "host_permissions": [
+      "http://localhost:5000/*"
+    ],
+    "action": {
+      "default_popup": "popup.html"
+    },
+    "content_scripts": [
+      {
+        "matches": ["<all_urls>"],
+        "js": ["content.js"]
+      }
+    ]
+  }
