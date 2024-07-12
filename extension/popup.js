@@ -5,26 +5,30 @@ document.addEventListener('DOMContentLoaded', function() {
   let pageProcessed = false;
   let currentTabId = null;
   let chatHistory = [];
+  let currentURL = '';
+  let processedURLs = [];
 
   // Load chat history and page processed state
   chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
     if (tabs[0]) {
       currentTabId = tabs[0].id;
-      chrome.storage.local.get([`chatHistory_${currentTabId}`, `pageProcessed_${currentTabId}`], function(result) {
+      currentURL = tabs[0].url;
+      chrome.storage.local.get([`chatHistory_${currentTabId}`, `pageProcessed_${currentTabId}`, `processedURLs_${currentTabId}`], function(result) {
         chatHistory = result[`chatHistory_${currentTabId}`] || [];
         pageProcessed = result[`pageProcessed_${currentTabId}`] || false;
+        processedURLs = result[`processedURLs_${currentTabId}`] || [];
         
         renderChatHistory();
         
-        if (pageProcessed) {
-          console.log("Page already processed, skipping initial processing");
+        if (pageProcessed && processedURLs.includes(currentURL)) {
+          console.log("Page already processed");
+          //addMessage('Auralis', 'Welcome back! How may I assist you today?', 'ai');
         } else {
           initialProcessing();
         }
       });
     }
   });
-
 
   function renderChatHistory() {
     chatbox.innerHTML = ''; // Clear existing messages
@@ -75,6 +79,9 @@ document.addEventListener('DOMContentLoaded', function() {
       .then(data => {
         console.log("Received answer:", data.answer);
         addMessage('Auralis', data.answer, 'ai');
+        if (data.sources && data.sources.length > 0) {
+          addMessage('Auralis', 'Sources: ' + data.sources.join(', '), 'ai');
+        }
         if (data.suggested_questions) {
           addMessage('Auralis', 'Suggested Questions:', 'ai');
           data.suggested_questions.split('\n').forEach(question => {
@@ -112,14 +119,22 @@ document.addEventListener('DOMContentLoaded', function() {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({content: response.content}),
+          body: JSON.stringify({
+            content: response.content,
+            url: currentURL,
+            append: pageProcessed
+          }),
         })
         .then(response => response.json())
         .then(data => {
           console.log("Process page response:", data);
           if (data.status === 'success') {
             pageProcessed = true;
-            chrome.storage.local.set({[`pageProcessed_${currentTabId}`]: true});
+            processedURLs.push(currentURL);
+            chrome.storage.local.set({
+              [`pageProcessed_${currentTabId}`]: true,
+              [`processedURLs_${currentTabId}`]: processedURLs
+            });
             addMessage('Auralis', 'Page processed successfully. How may I assist you today?', 'ai');
             if (data.initial_questions) {
               addMessage('Auralis', 'Here are some suggested questions:', 'ai');
@@ -143,11 +158,54 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   }
+
+  function checkURLChange() {
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      if (tabs[0] && tabs[0].url !== currentURL) {
+        currentURL = tabs[0].url;
+        processNewPage();
+      }
+    });
+  }
+
+  function processNewPage() {
+    if (!processedURLs.includes(currentURL)) {
+      chrome.tabs.sendMessage(currentTabId, {action: "getPageContent"}, function(response) {
+        if (response && response.content) {
+          fetch('http://localhost:5000/process_page', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              content: response.content,
+              url: currentURL,
+              append: true
+            }),
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.status === 'success') {
+              processedURLs.push(currentURL);
+              chrome.storage.local.set({[`processedURLs_${currentTabId}`]: processedURLs});
+              addMessage('Auralis', 'New page processed. How may I assist you?', 'ai');
+            }
+          })
+          .catch(error => {
+            console.error('Error:', error);
+            addMessage('System', 'Failed to process new page', 'ai');
+          });
+        }
+      });
+    }
+  }
+
+  setInterval(checkURLChange, 1000);  // Check every second
 });
 
 // Listen for tab removal
 chrome.tabs.onRemoved.addListener(function(tabId, removeInfo) {
-  chrome.storage.local.remove([`chatHistory_${tabId}`, `pageProcessed_${tabId}`], function() {
-    console.log(`Chat history and page processed state cleared for tab ${tabId}`);
+  chrome.storage.local.remove([`chatHistory_${tabId}`, `pageProcessed_${tabId}`, `processedURLs_${tabId}`], function() {
+    console.log(`Chat history, page processed state, and processed URLs cleared for tab ${tabId}`);
   });
 });
