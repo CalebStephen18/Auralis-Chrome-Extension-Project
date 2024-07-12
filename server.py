@@ -1,9 +1,10 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from langchain_groq import ChatGroq
 from langchain_community.document_loaders import WebBaseLoader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.embeddings import OllamaEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import Chroma, FAISS
 from langchain.chains import ConversationalRetrievalChain, LLMChain
 from langchain.memory import ConversationBufferMemory
 from langchain_community.llms import Ollama
@@ -12,7 +13,8 @@ from langchain.prompts import PromptTemplate
 app = Flask(__name__)
 CORS(app, resources={r"/": {"origins": ""}})
 
-llm = Ollama(model="llama2")
+llm=ChatGroq(groq_api_key=groq_api_key,
+             model_name="mixtral-8x7b-32768")
 embeddings = OllamaEmbeddings()
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
@@ -73,7 +75,7 @@ def process_page():
     if append and vectorstore:
         vectorstore.add_texts(texts, metadatas=[{"source": url}] * len(texts))
     else:
-        vectorstore = Chroma.from_texts(texts, embeddings, metadatas=[{"source": url}] * len(texts))
+        vectorstore = FAISS.from_texts(texts, embeddings, metadatas=[{"source": url}] * len(texts))
     
     qa = ConversationalRetrievalChain.from_llm(
         llm=llm,
