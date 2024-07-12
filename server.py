@@ -4,25 +4,31 @@ from langchain_groq import ChatGroq
 from langchain_community.document_loaders import WebBaseLoader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.embeddings import OllamaEmbeddings
-from langchain_community.vectorstores import Chroma, FAISS
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
 from langchain.chains import ConversationalRetrievalChain, LLMChain
 from langchain.memory import ConversationBufferMemory
-from langchain_community.llms import Ollama
 from langchain.prompts import PromptTemplate
+from typing import Dict, List
 
 app = Flask(__name__)
 CORS(app, resources={r"/": {"origins": ""}})
 
-llm=ChatGroq(groq_api_key=groq_api_key,
-             model_name="mixtral-8x7b-32768")
-embeddings = OllamaEmbeddings()
+# Initialize Groq
+groq_api_key = ""
+llm = ChatGroq(groq_api_key=groq_api_key, model_name="llama3-8b-8192")
+
+# Initialize embeddings
+embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+
+# Initialize memory
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
-vectorstore = None
-qa = None
+# Initialize vector stores
+vectorstores: Dict[str, FAISS] = {}
 
 # Create a custom prompt template for QA
-qa_template = """Use the following pieces of context from the webpage to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.
+qa_template = """Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.
 
 {context}
 
@@ -52,7 +58,7 @@ question_generator_chain = LLMChain(
 
 @app.route('/process_page', methods=['POST'])
 def process_page():
-    global vectorstore, qa
+    global vectorstores
     print("Process page endpoint called")
     if 'content' not in request.json:
         print("No content in request")
@@ -60,7 +66,6 @@ def process_page():
     
     content = request.json['content']
     url = request.json.get('url', '')
-    append = request.json.get('append', False)
     print(f"Processing page with content length: {len(content)}")
     
     text_splitter = CharacterTextSplitter(
@@ -72,18 +77,9 @@ def process_page():
     texts = text_splitter.split_text(content)
     print(f"Split into {len(texts)} chunks")
     
-    if append and vectorstore:
-        vectorstore.add_texts(texts, metadatas=[{"source": url}] * len(texts))
-    else:
-        vectorstore = FAISS.from_texts(texts, embeddings, metadatas=[{"source": url}] * len(texts))
+    vectorstores[url] = FAISS.from_texts(texts, embeddings, metadatas=[{"source": url}] * len(texts))
     
-    qa = ConversationalRetrievalChain.from_llm(
-        llm=llm,
-        retriever=vectorstore.as_retriever(search_kwargs={"k": 3}),
-        memory=memory,
-        combine_docs_chain_kwargs={"prompt": QA_PROMPT}
-    )
-    print("QA chain created successfully")
+    print("Vector store created successfully")
     
     initial_questions = question_generator_chain.run(content=content)
     print(f"Initial questions generated: {initial_questions}")
@@ -95,10 +91,9 @@ def process_page():
 
 @app.route('/ask_question', methods=['POST'])
 def ask_question():
-    global qa
     print("Ask question endpoint called")
-    if qa is None:
-        print("QA is None, page not processed yet")
+    if not vectorstores:
+        print("No pages processed yet")
         return jsonify({'error': 'Please process a page first'}), 400
 
     if 'query' not in request.json:
@@ -106,25 +101,54 @@ def ask_question():
         return jsonify({'error': 'No query provided'}), 400
 
     query = request.json['query']
+    current_url = request.json.get('currentUrl', '')
+    processed_urls = request.json.get('processedUrls', [])
     print(f"Received question: {query}")
 
-    result = qa({"question": query})
+    result = tiered_search(query, current_url, processed_urls)
     answer = result['answer']
-
-    # Add source documents to the response
-    source_documents = result.get('source_documents', [])
-    sources = [doc.metadata.get('source', 'Unknown') for doc in source_documents]
 
     suggested_questions = question_generator_chain.run(content=answer)
     print(f"Answer: {answer}")
-    print(f"Sources: {sources}")
     print(f"Suggested questions: {suggested_questions}")
 
     return jsonify({
         'answer': answer,
-        'sources': sources,
+        'sources': result.get('sources', []),
         'suggested_questions': suggested_questions
     })
+
+def tiered_search(query: str, current_url: str, processed_urls: List[str]):
+    # First, search the current page
+    if current_url in vectorstores:
+        result = search_single_store(query, vectorstores[current_url])
+        if result['answer'].strip():  # If a non-empty answer is found
+            return result
+    
+    # If no satisfactory answer, search previous pages in reverse order
+    for url in reversed(processed_urls):
+        if url != current_url and url in vectorstores:
+            result = search_single_store(query, vectorstores[url])
+            if result['answer'].strip():
+                return result
+    
+    # If still no answer, return a default response
+    return {"answer": "I couldn't find a relevant answer in the current or previous pages.", "source_documents": []}
+
+def search_single_store(query: str, store: FAISS):
+    docs = store.similarity_search(query, k=3)
+    context = "\n".join(doc.page_content for doc in docs)
+    
+    qa = ConversationalRetrievalChain.from_llm(
+        llm=llm,
+        retriever=store.as_retriever(search_kwargs={"k": 3}),
+        memory=memory,
+        combine_docs_chain_kwargs={"prompt": QA_PROMPT}
+    )
+    
+    result = qa({"question": query, "chat_history": []})
+    result['source_documents'] = docs
+    return result
 
 if __name__ == '__main__':
     app.run(debug=True)

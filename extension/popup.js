@@ -67,13 +67,17 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       addMessage('You', query, 'user');
       userInput.value = '';
-
+  
       fetch('http://localhost:5000/ask_question', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({query: query}),
+        body: JSON.stringify({
+          query: query,
+          currentUrl: currentURL,
+          processedUrls: processedURLs
+        }),
       })
       .then(response => response.json())
       .then(data => {
@@ -122,15 +126,15 @@ document.addEventListener('DOMContentLoaded', function() {
           body: JSON.stringify({
             content: response.content,
             url: currentURL,
-            append: pageProcessed
           }),
         })
         .then(response => response.json())
         .then(data => {
-          console.log("Process page response:", data);
           if (data.status === 'success') {
             pageProcessed = true;
-            processedURLs.push(currentURL);
+            if (!processedURLs.includes(currentURL)) {
+              processedURLs.push(currentURL);
+            }
             chrome.storage.local.set({
               [`pageProcessed_${currentTabId}`]: true,
               [`processedURLs_${currentTabId}`]: processedURLs
@@ -180,7 +184,6 @@ document.addEventListener('DOMContentLoaded', function() {
             body: JSON.stringify({
               content: response.content,
               url: currentURL,
-              append: true
             }),
           })
           .then(response => response.json())
