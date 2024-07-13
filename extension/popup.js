@@ -40,6 +40,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
+  function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
   function showTypingIndicator() {
     const indicator = document.createElement('div');
     indicator.className = 'typing-indicator';
@@ -75,17 +79,19 @@ document.addEventListener('DOMContentLoaded', function() {
     messageElement.textContent = message;
     chatbox.appendChild(messageElement);
     chatbox.scrollTop = chatbox.scrollHeight;
-
+  
     // Add animation class
     setTimeout(() => messageElement.classList.add('show'), 10);
-
+  
     if (shouldSave) {
       chatHistory.push({sender, message, className, isClickable});
       chrome.storage.local.set({[`chatHistory_${currentTabId}`]: chatHistory});
     }
+  
+    return messageElement;
   }
 
-  function sendMessage(message = null) {
+  async function sendMessage(message = null) {
     const query = message || userInput.value.trim();
     if (query) {
       if (!pageProcessed) {
@@ -94,42 +100,49 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       addMessage('You', query, 'user');
       userInput.value = '';
-
-      console.log("Sending question:", { query, currentURL, processedURLs });
-
+  
       showTypingIndicator();
-
-      fetch('http://localhost:5000/ask_question', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          query: query,
-          currentUrl: currentURL,
-          processedUrls: processedURLs
-        }),
-      })
-      .then(response => response.json())
-      .then(data => {
+  
+      try {
+        const response = await fetch('http://localhost:5000/ask_question', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            query: query,
+            currentUrl: currentURL,
+            processedUrls: processedURLs
+          }),
+        });
+        const data = await response.json();
         hideTypingIndicator();
         console.log("Received answer:", data);
+        
+        // Add the main answer
         addMessage('Auralis', data.answer, 'ai');
+        await delay(2000);
+        
+        // Add the sources if available
         if (data.sources && data.sources.length > 0) {
           addMessage('Auralis', 'Sources: ' + data.sources.join(', '), 'ai');
+          await delay(2000);
         }
+        
+        // Add suggested questions
         if (data.suggested_questions && data.suggested_questions.length > 0) {
           addMessage('Auralis', 'Here are some suggested questions:', 'ai', false);
-          data.suggested_questions.forEach(question => {
+          await delay(2000);
+          for (let question of data.suggested_questions) {
             addMessage('Auralis', question, 'ai', true);
-          });
+            await delay(2000);
+          }
         }
-      })
-      .catch(error => {
+      } catch (error) {
         hideTypingIndicator();
         console.error('Error:', error);
         addMessage('System', 'Failed to get response from server', 'ai');
-      });
+      }
     }
   }
 
@@ -138,31 +151,32 @@ document.addEventListener('DOMContentLoaded', function() {
     if (e.key === 'Enter') sendMessage();
   });
 
-  function initialProcessing() {
+  async function initialProcessing() {
     console.log("Starting initial processing");
-    showTypingIndicator(); // Show the indicator
-    chrome.tabs.sendMessage(currentTabId, {action: "getPageContent"}, function(response) {
+    showTypingIndicator();
+    chrome.tabs.sendMessage(currentTabId, {action: "getPageContent"}, async function(response) {
       if (chrome.runtime.lastError) {
         console.error("Error sending message:", chrome.runtime.lastError.message);
-        hideTypingIndicator(); // Hide the indicator
+        hideTypingIndicator();
         addMessage('System', 'Failed to get page content: ' + chrome.runtime.lastError.message, 'ai');
         return;
       }
       if (response && response.content) {
         console.log("Got page content, length:", response.content.length);
-        fetch('http://localhost:5000/process_page', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            content: response.content,
-            url: currentURL
-          }),
-        })
-        .then(response => response.json())
-        .then(data => {
-          hideTypingIndicator(); // Hide the indicator
+        addMessage('System', 'Processing page...', 'ai');
+        try {
+          const res = await fetch('http://localhost:5000/process_page', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              content: response.content,
+              url: currentURL
+            }),
+          });
+          const data = await res.json();
+          hideTypingIndicator();
           console.log("Process page response:", data);
           if (data.status === 'success') {
             pageProcessed = true;
@@ -175,23 +189,25 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             console.log("Updated processedURLs:", processedURLs);
             addMessage('Auralis', 'Page processed successfully. How may I assist you today?', 'ai');
+            await delay(2000);
             if (data.initial_questions && data.initial_questions.length > 0) {
               addMessage('Auralis', 'Here are some suggested questions:', 'ai', false);
-              data.initial_questions.forEach(question => {
+              await delay(2000);
+              for (let question of data.initial_questions) {
                 addMessage('Auralis', question, 'ai', true);
-              });
+                await delay(2000);
+              }
             }
           } else {
             addMessage('System', 'Failed to process page', 'ai');
           }
-        })
-        .catch(error => {
-          hideTypingIndicator(); // Hide the indicator
+        } catch (error) {
+          hideTypingIndicator();
           console.error('Error:', error);
           addMessage('System', 'Failed to process page', 'ai');
-        });
+        }
       } else {
-        hideTypingIndicator(); // Hide the indicator
+        hideTypingIndicator();
         console.log("No content in response");
         addMessage('System', 'No content found on page', 'ai');
       }
