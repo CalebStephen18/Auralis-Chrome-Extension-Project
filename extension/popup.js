@@ -2,11 +2,21 @@ document.addEventListener('DOMContentLoaded', function() {
   const chatbox = document.getElementById('chatbox');
   const userInput = document.getElementById('userInput');
   const sendBtn = document.getElementById('sendBtn');
+  const darkModeToggle = document.getElementById('darkModeToggle');
+  const body = document.body;
+  const icon = darkModeToggle.querySelector('i');
   let pageProcessed = false;
   let currentTabId = null;
   let chatHistory = [];
   let currentURL = '';
   let processedURLs = [];
+
+  // Dark mode toggle
+  darkModeToggle.addEventListener('click', function() {
+    body.classList.toggle('dark-mode');
+    icon.classList.toggle('fa-moon');
+    icon.classList.toggle('fa-sun');
+  });
 
   chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
     if (tabs[0]) {
@@ -30,6 +40,21 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
+  function showTypingIndicator() {
+    const indicator = document.createElement('div');
+    indicator.className = 'typing-indicator';
+    indicator.innerHTML = '<span></span><span></span><span></span>';
+    chatbox.appendChild(indicator);
+    chatbox.scrollTop = chatbox.scrollHeight;
+  }
+  
+  function hideTypingIndicator() {
+    const indicator = chatbox.querySelector('.typing-indicator');
+    if (indicator) {
+      indicator.remove();
+    }
+  }
+
   function renderChatHistory() {
     chatbox.innerHTML = '';
     chatHistory.forEach(msg => addMessage(msg.sender, msg.message, msg.className, msg.isClickable, false));
@@ -51,6 +76,9 @@ document.addEventListener('DOMContentLoaded', function() {
     chatbox.appendChild(messageElement);
     chatbox.scrollTop = chatbox.scrollHeight;
 
+    // Add animation class
+    setTimeout(() => messageElement.classList.add('show'), 10);
+
     if (shouldSave) {
       chatHistory.push({sender, message, className, isClickable});
       chrome.storage.local.set({[`chatHistory_${currentTabId}`]: chatHistory});
@@ -69,6 +97,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
       console.log("Sending question:", { query, currentURL, processedURLs });
 
+      showTypingIndicator();
+
       fetch('http://localhost:5000/ask_question', {
         method: 'POST',
         headers: {
@@ -82,6 +112,7 @@ document.addEventListener('DOMContentLoaded', function() {
       })
       .then(response => response.json())
       .then(data => {
+        hideTypingIndicator();
         console.log("Received answer:", data);
         addMessage('Auralis', data.answer, 'ai');
         if (data.sources && data.sources.length > 0) {
@@ -95,6 +126,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       })
       .catch(error => {
+        hideTypingIndicator();
         console.error('Error:', error);
         addMessage('System', 'Failed to get response from server', 'ai');
       });
@@ -108,15 +140,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function initialProcessing() {
     console.log("Starting initial processing");
+    showTypingIndicator(); // Show the indicator
     chrome.tabs.sendMessage(currentTabId, {action: "getPageContent"}, function(response) {
       if (chrome.runtime.lastError) {
         console.error("Error sending message:", chrome.runtime.lastError.message);
+        hideTypingIndicator(); // Hide the indicator
         addMessage('System', 'Failed to get page content: ' + chrome.runtime.lastError.message, 'ai');
         return;
       }
       if (response && response.content) {
         console.log("Got page content, length:", response.content.length);
-        addMessage('System', 'Processing page...', 'ai');
         fetch('http://localhost:5000/process_page', {
           method: 'POST',
           headers: {
@@ -129,6 +162,7 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .then(response => response.json())
         .then(data => {
+          hideTypingIndicator(); // Hide the indicator
           console.log("Process page response:", data);
           if (data.status === 'success') {
             pageProcessed = true;
@@ -152,10 +186,12 @@ document.addEventListener('DOMContentLoaded', function() {
           }
         })
         .catch(error => {
+          hideTypingIndicator(); // Hide the indicator
           console.error('Error:', error);
           addMessage('System', 'Failed to process page', 'ai');
         });
       } else {
+        hideTypingIndicator(); // Hide the indicator
         console.log("No content in response");
         addMessage('System', 'No content found on page', 'ai');
       }
