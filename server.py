@@ -14,18 +14,15 @@ from typing import Dict, List
 
 app = Flask(__name__)
 CORS(app, resources={r"/": {"origins": ""}})
+
 llm = Ollama(model="llama3")  
 
-# Initialize embeddings
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
-# Initialize memory
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
-# Initialize vector stores
 vectorstores: Dict[str, FAISS] = {}
 
-# Create a custom prompt template for QA
 qa_template = """Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.
 
 {context}
@@ -35,7 +32,6 @@ Helpful Answer:"""
 
 QA_PROMPT = PromptTemplate(template=qa_template, input_variables=["context", "question"])
 
-# Create a custom prompt template for question generation
 question_generator_template = """
 Based on the following webpage content, suggest 3 relevant questions that a user might want to ask:
 
@@ -68,6 +64,7 @@ def process_page():
     content = request.json['content']
     url = request.json.get('url', '')
     print(f"Processing page with content length: {len(content)}")
+    print(f"URL: {url}")
     
     text_splitter = CharacterTextSplitter(
         separator = "\n",
@@ -84,7 +81,6 @@ def process_page():
     
     initial_questions = question_generator_chain.run(content=content)
     
-    # Process the initial questions to remove Q1:, Q2:, Q3: prefixes
     processed_questions = []
     for line in initial_questions.split('\n'):
         if line.strip().startswith('Q'):
@@ -100,7 +96,9 @@ def process_page():
 
 @app.route('/ask_question', methods=['POST'])
 def ask_question():
-    print("Ask question endpoint called")
+    print("\n--- New question received ---")
+    print(f"Request data: {request.json}")
+    
     if not vectorstores:
         print("No pages processed yet")
         return jsonify({'error': 'Please process a page first'}), 400
@@ -113,20 +111,22 @@ def ask_question():
     current_url = request.json.get('currentUrl', '')
     processed_urls = request.json.get('processedUrls', [])
     print(f"Received question: {query}")
+    print(f"Current URL: {current_url}")
+    print(f"Processed URLs: {processed_urls}")
 
     result = tiered_search(query, current_url, processed_urls)
     answer = result['answer']
 
+    print(f"Final answer: {answer}")
+
     suggested_questions = question_generator_chain.run(content=answer)
     
-    # Process the suggested questions to remove Q1:, Q2:, Q3: prefixes
     processed_questions = []
     for line in suggested_questions.split('\n'):
         if line.strip().startswith('Q'):
             question = line.split(':', 1)[1].strip()
             processed_questions.append(question)
 
-    print(f"Answer: {answer}")
     print(f"Suggested questions: {processed_questions}")
 
     return jsonify({
@@ -136,24 +136,40 @@ def ask_question():
     })
 
 def tiered_search(query: str, current_url: str, processed_urls: List[str]):
-    # First, search the current page
+    print(f"\nPerforming tiered search for query: {query}")
+    print(f"Current URL: {current_url}")
+    print(f"Processed URLs: {processed_urls}")
+    
     if current_url in vectorstores:
+        print(f"Searching current URL: {current_url}")
         result = search_single_store(query, vectorstores[current_url])
-        if result['answer'].strip():  # If a non-empty answer is found
+        if result['answer'].strip() and not result['answer'].lower().startswith("i don't know"):
+            print(f"Answer found in current URL: {current_url}")
             return result
     
-    # If no satisfactory answer, search previous pages in reverse order
+    # Only search other URLs if no answer was found in the current URL
     for url in reversed(processed_urls):
         if url != current_url and url in vectorstores:
+            print(f"Searching previous URL: {url}")
             result = search_single_store(query, vectorstores[url])
-            if result['answer'].strip():
+            if result['answer'].strip() and not result['answer'].lower().startswith("i don't know"):
+                print(f"Answer found in previous URL: {url}")
                 return result
     
-    # If still no answer, return a default response
+    print("No answer found in any processed URLs")
     return {"answer": "I couldn't find a relevant answer in the current or previous pages.", "source_documents": []}
 
 def search_single_store(query: str, store: FAISS):
     docs = store.similarity_search(query, k=3)
+    
+    print(f"\nQuery: {query}")
+    print("Retrieved context chunks:")
+    for i, doc in enumerate(docs, 1):
+        print(f"Chunk {i}:")
+        print(doc.page_content)
+        print(f"Metadata: {doc.metadata}")
+        print("-" * 50)
+    
     context = "\n".join(doc.page_content for doc in docs)
     
     qa = ConversationalRetrievalChain.from_llm(
@@ -168,4 +184,4 @@ def search_single_store(query: str, store: FAISS):
     return result
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, use_reloader = False)
