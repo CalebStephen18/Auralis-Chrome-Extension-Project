@@ -7,16 +7,14 @@ from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.chains import ConversationalRetrievalChain, LLMChain
+from langchain_community.llms import Ollama
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts import PromptTemplate
 from typing import Dict, List
 
 app = Flask(__name__)
 CORS(app, resources={r"/": {"origins": ""}})
-
-# Initialize Groq
-groq_api_key = ""
-llm = ChatGroq(groq_api_key=groq_api_key, model_name="llama3-8b-8192")
+llm = Ollama(model="llama3")  
 
 # Initialize embeddings
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
@@ -43,7 +41,10 @@ Based on the following webpage content, suggest 3 relevant questions that a user
 
 Webpage content: {content}
 
-Provide only the questions, without any explanations or numbering:
+Provide the questions in the following format:
+Q1: [First question]
+Q2: [Second question]
+Q3: [Third question]
 """
 
 question_generator_prompt = PromptTemplate(
@@ -82,10 +83,18 @@ def process_page():
     print("Vector store created successfully")
     
     initial_questions = question_generator_chain.run(content=content)
-    print(f"Initial questions generated: {initial_questions}")
+    
+    # Process the initial questions to remove Q1:, Q2:, Q3: prefixes
+    processed_questions = []
+    for line in initial_questions.split('\n'):
+        if line.strip().startswith('Q'):
+            question = line.split(':', 1)[1].strip()
+            processed_questions.append(question)
+    
+    print(f"Initial questions generated: {processed_questions}")
     
     return jsonify({
-        'initial_questions': initial_questions,
+        'initial_questions': processed_questions,
         'status': 'success'
     })
 
@@ -109,13 +118,21 @@ def ask_question():
     answer = result['answer']
 
     suggested_questions = question_generator_chain.run(content=answer)
+    
+    # Process the suggested questions to remove Q1:, Q2:, Q3: prefixes
+    processed_questions = []
+    for line in suggested_questions.split('\n'):
+        if line.strip().startswith('Q'):
+            question = line.split(':', 1)[1].strip()
+            processed_questions.append(question)
+
     print(f"Answer: {answer}")
-    print(f"Suggested questions: {suggested_questions}")
+    print(f"Suggested questions: {processed_questions}")
 
     return jsonify({
         'answer': answer,
         'sources': result.get('sources', []),
-        'suggested_questions': suggested_questions
+        'suggested_questions': processed_questions
     })
 
 def tiered_search(query: str, current_url: str, processed_urls: List[str]):

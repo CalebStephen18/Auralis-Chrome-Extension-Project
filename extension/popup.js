@@ -22,7 +22,6 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (pageProcessed && processedURLs.includes(currentURL)) {
           console.log("Page already processed");
-          //addMessage('Auralis', 'Welcome back! How may I assist you today?', 'ai');
         } else {
           initialProcessing();
         }
@@ -67,7 +66,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       addMessage('You', query, 'user');
       userInput.value = '';
-  
+
       fetch('http://localhost:5000/ask_question', {
         method: 'POST',
         headers: {
@@ -86,12 +85,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (data.sources && data.sources.length > 0) {
           addMessage('Auralis', 'Sources: ' + data.sources.join(', '), 'ai');
         }
-        if (data.suggested_questions) {
-          addMessage('Auralis', 'Suggested Questions:', 'ai');
-          data.suggested_questions.split('\n').forEach(question => {
-            if (question.trim()) {
-              addMessage('Auralis', question.trim(), 'ai', true);
-            }
+        if (data.suggested_questions && data.suggested_questions.length > 0) {
+          addMessage('Auralis', 'Here are some suggested questions:', 'ai', false);
+          data.suggested_questions.forEach(question => {
+            addMessage('Auralis', question, 'ai', true);
           });
         }
       })
@@ -125,11 +122,12 @@ document.addEventListener('DOMContentLoaded', function() {
           },
           body: JSON.stringify({
             content: response.content,
-            url: currentURL,
+            url: currentURL
           }),
         })
         .then(response => response.json())
         .then(data => {
+          console.log("Process page response:", data);
           if (data.status === 'success') {
             pageProcessed = true;
             if (!processedURLs.includes(currentURL)) {
@@ -140,12 +138,10 @@ document.addEventListener('DOMContentLoaded', function() {
               [`processedURLs_${currentTabId}`]: processedURLs
             });
             addMessage('Auralis', 'Page processed successfully. How may I assist you today?', 'ai');
-            if (data.initial_questions) {
-              addMessage('Auralis', 'Here are some suggested questions:', 'ai');
-              data.initial_questions.split('\n').forEach(question => {
-                if (question.trim()) {
-                  addMessage('Auralis', question.trim(), 'ai', true);
-                }
+            if (data.initial_questions && data.initial_questions.length > 0) {
+              addMessage('Auralis', 'Here are some suggested questions:', 'ai', false);
+              data.initial_questions.forEach(question => {
+                addMessage('Auralis', question, 'ai', true);
               });
             }
           } else {
@@ -183,7 +179,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             body: JSON.stringify({
               content: response.content,
-              url: currentURL,
+              url: currentURL
             }),
           })
           .then(response => response.json())
