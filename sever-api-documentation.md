@@ -19,7 +19,7 @@ Processes a web page's content and prepares it for question answering.
   "content": "Full text content of the web page",
   "url": "URL of the web page (optional)"
 }
-
+```
 Success Response:
 Code: 200 OK
 Content:
@@ -32,7 +32,7 @@ Content:
   ],
   "status": "success"
 }
-
+```
 Error Response:
 Code: 400 Bad Request
 Content:
@@ -40,7 +40,7 @@ Content:
 {
   "error": "No content provided"
 }
-
+```
 #### Notes:
 - This endpoint splits the provided content into chunks, creates embeddings, and stores them in a FAISS vector store.
 - It also generates initial questions based on the content.
@@ -60,7 +60,7 @@ Answers a user's question based on the processed page content.
   "currentUrl": "URL of the current page",
   "processedUrls": ["Array of previously processed URLs"]
 }
-
+```
 Success Response:
 Code: 200 OK
 Content:
@@ -74,7 +74,7 @@ Content:
     "Follow-up question 3"
   ]
 }
-
+```
 Error Response:
 Code: 400 Bad Request
 Content:
@@ -82,14 +82,14 @@ Content:
 {
   "error": "Please process a page first"
 }
-
+```
 or
 
 ```json
 {
   "error": "No query provided"
 }
-
+```
 #### Notes:
 - This endpoint performs a tiered search across the current page and previously processed pages.
 - It uses a ConversationalRetrievalChain to generate answers based on the retrieved context.
