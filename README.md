@@ -46,7 +46,15 @@ Auralis Chatbot is a powerful Chrome extension that leverages Language Models (L
 
 ### Client-side Components
 
-- **Popup (popup.js, popup.html)**: The main user interface for interacting with the chatbot
+- **Popup (popup.js, popup.html)**:
+  - The popup script manages the user interface and interactions within the extension's popup window. Key features include:
+  - Dark mode toggle
+  - Chat interface with message history
+  - Page processing initiation
+  - Question asking and answer display
+  - Suggested questions display
+  - URL change detection and new page processing
+    
 - **Background Script (background.js)**: Manages the extension's state and communicates with the server
 - **Content Script (content.js)**: Extracts page content and injects it into the extension
 
