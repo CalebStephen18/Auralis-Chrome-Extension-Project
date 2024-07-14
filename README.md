@@ -2,7 +2,7 @@
 
 ## Overview
 
-Auralis Chatbot is a powerful Chrome extension that leverages Language Models (LLMs) and Retrieval-Augmented Generation (RAG) to provide intelligent, context-aware responses to user queries about web page content. This extension processes the content of the current web page and allows users to ask questions about it, receiving informative answers and suggested follow-up questions.
+Auralis Chatbot is a powerful Chrome extension that leverages Language Models (LLMs) and Retrieval-Augmented Generation (RAG) to provide intelligent, context-aware responses to user queries about web page content. This extension processes the content of the current web page and allows users to ask questions about it, receiving informative answers and suggested follow-up questions. 
 
 ### Key Features
 
@@ -22,7 +22,7 @@ Auralis Chatbot is a powerful Chrome extension that leverages Language Models (L
 
 ### Server Setup
 
-1. Clone the repository: git clone https://github.com/your-username/auralis-chatbot.git
+1. Clone the repository: https://github.com/CalebStephen18/Auralis-Chrome-Extension-Project.git 
 2. Install the required Python packages: pip install -r requirements.txt
 3. Start the Flask server: python server.py
 
@@ -54,6 +54,8 @@ Auralis Chatbot is a powerful Chrome extension that leverages Language Models (L
 
 - **Flask Server (server.py)**: Handles requests from the extension, processes page content, and generates responses
 - **LangChain Integration**: Utilizes various LangChain components for document processing, embedding, and question-answering
+
+Detailed documentation is present for the Client-side and Server-side components.
 
 ### RAG Process
 
