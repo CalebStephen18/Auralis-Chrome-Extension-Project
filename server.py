@@ -53,7 +53,6 @@ question_generator_chain = LLMChain(
     llm=llm,
     prompt=question_generator_prompt
 )
-import logging
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
